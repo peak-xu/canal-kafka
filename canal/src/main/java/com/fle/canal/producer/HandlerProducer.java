@@ -31,7 +31,6 @@ public class HandlerProducer {
      * @param waiting   是否等待线程执行完成 true:可以及时看到结果; false:让线程继续执行，并跳出此方法返回调用方主程序;
      */
     public void sendMessage(Record record, boolean waiting) {
-//        String canalBeanJsonStr = JSON.toJSONString(canalBean);
         Future<String> f = kafkaProducerTask.sendKafkaMessage(String.valueOf(record.getObjectName()), record);
         logger.info("HandlerProducer日志--->当前线程:" + Thread.currentThread().getName() + ",接受的record:" + record);
         if (waiting) {

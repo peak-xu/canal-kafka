@@ -1,7 +1,6 @@
 package com.fle.canal.producer;
 
 import com.alibaba.dts.formats.avro.Record;
-import com.alibaba.dts.formats.avro.Source;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

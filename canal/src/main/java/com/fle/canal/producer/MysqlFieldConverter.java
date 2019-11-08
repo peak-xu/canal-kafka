@@ -5,9 +5,9 @@ package com.fle.canal.producer;
  * Desc:
  */
 public enum MysqlFieldConverter {
-    DECIMAL(0),INT8(1),INT16(2),INT32(3),Float(4),DOUBLE(5),
+    DECIMAL(0),INT8(1),INT16(2),INT32(3),FLOAT(4),DOUBLE(5),
     NULL(6),TIMESTAMP(7),INT64(8),INT24(9),DATE(10),TIME(11),
-    DATETIME(12),INT(300),VARCHAR(301);
+    DATETIME(12),INT(8),TINYINT(1),VARCHAR(253),STRING(253),SMALLINT(1),BIGINT(8);
 
     private int value;
 
@@ -20,7 +20,7 @@ public enum MysqlFieldConverter {
             case 0:
                 return DECIMAL;
             case 4:
-                return Float;
+                return FLOAT;
             case 5:
                 return DOUBLE;
             case 10:
@@ -29,8 +29,8 @@ public enum MysqlFieldConverter {
                 return DATETIME;
             case 300:
                 return INT;
-            case 301:
-                return VARCHAR;
+            case 253:
+                return STRING;
             default :
                 return null;
         }

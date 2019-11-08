@@ -18,10 +18,11 @@ import org.springframework.stereotype.Component;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.sql.*;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.Date;
 
 /**
  * Created by xufengfeng on 2019-10-26 下午 4:39.
@@ -32,6 +33,7 @@ public class CanalHandler {
 
 
     protected final static Logger logger = LoggerFactory.getLogger(CanalHandler.class);
+
 
     @Autowired
     private HandlerProducer handlerProducer;
@@ -123,7 +125,7 @@ public class CanalHandler {
                     Source source = new Source();
                     Record record = new Record();
 
-                    if ("mysql".equals(entry.getHeader().getSchemaName())) {
+                    if ("MYSQL".equals(entry.getHeader().getSourceType().name())) {
                         record.setVersion(169493228);
                         record.setId(message.getId());
                         record.setSourceTimestamp(entry.getHeader().getExecuteTime());
@@ -136,30 +138,31 @@ public class CanalHandler {
                         record.setSource(source);
                         if ("INSERT".equals(entry.getHeader().getEventType().name())) {
                             record.setOperation(Operation.INSERT);
-                            setTags(rowData.getAfterColumnsList(),record);
-                            setFields(rowData.getAfterColumnsList(),record);
-                            setAfterImages(rowData.getAfterColumnsList(),record);
+                            setTags(rowData.getAfterColumnsList(), record);
+                            setFields(rowData.getAfterColumnsList(), record);
+                            record.setAfterImages(setImages(rowData.getAfterColumnsList()));
                         } else if ("UPDATE".equals(entry.getHeader().getEventType().name())) {
                             record.setOperation(Operation.UPDATE);
-                            setTags(rowData.getAfterColumnsList(),record);
-                            setFields(rowData.getAfterColumnsList(),record);
-                            setAfterImages(rowData.getAfterColumnsList(),record);
-                            setBeforeImages(rowData.getBeforeColumnsList(),record);
+                            setTags(rowData.getAfterColumnsList(), record);
+                            setFields(rowData.getAfterColumnsList(), record);
+                            record.setAfterImages(setImages(rowData.getAfterColumnsList()));
 
+                            record.setBeforeImages(setImages(rowData.getBeforeColumnsList()));
                         } else if ("DELETE".equals(entry.getHeader().getEventType().name())) {
                             record.setOperation(Operation.DELETE);
-                            setTags(rowData.getBeforeColumnsList(),record);
-                            setFields(rowData.getBeforeColumnsList(),record);
-                            setBeforeImages(rowData.getBeforeColumnsList(),record);
+                            setTags(rowData.getBeforeColumnsList(), record);
+                            setFields(rowData.getBeforeColumnsList(), record);
+                            record.setBeforeImages(setImages(rowData.getBeforeColumnsList()));
+
                         }
 
                         record.setObjectName(entry.getHeader().getSchemaName() + "." + entry.getHeader().getTableName());
                         //record.setProcessTimestamps();默认为null
                         //record.setTags();在printColumnToList赋值
+                        //向kafka发送数据
+                        logger.info("----------source----" + source);
                         //record.setFields();
                     }
-                    //向kafka发送数据
-                    logger.info("----------source----" + source);
                     logger.info("-----------record-----------" + record);
                     handlerProducer.sendMessage(record, true);
                 }
@@ -167,90 +170,107 @@ public class CanalHandler {
         }
     }
 
-    private void setAfterImages(List<CanalEntry.Column> columns, Record record) throws UnsupportedEncodingException {
+    private List<Object> setImages(List<CanalEntry.Column> columns) throws UnsupportedEncodingException, ParseException {
         List<Object> list = new ArrayList<>();
-        for(CanalEntry.Column column:columns){
-            if(column.getMysqlType().contains("int")){
+        for (CanalEntry.Column column : columns) {
+            String value = column.getValue();
+            if (Objects.isNull(value)) {
+                list.add(new Object());
+                continue;
+            }
+
+            if (StringUtils.indexOfIgnoreCase(column.getMysqlType(), "int") != -1) {
+                String mysqlType = column.getMysqlType().toUpperCase();
+                logger.info("--------------mysqlType------------"+mysqlType);
+                if(com.mysql.jdbc.StringUtils.indexOfIgnoreCase(mysqlType,"UNSIGNED")!=-1){
+                    mysqlType=StringUtils.substringBefore(mysqlType, "UNSIGNED");
+                }
+                MysqlFieldConverter dataType = MysqlFieldConverter.valueOf(StringUtils.substringBefore(mysqlType, "("));
+
                 Integer integer = Integer.newBuilder()
-                        .setPrecision(MysqlFieldConverter.INT.enumToInt())
+                        .setPrecision(dataType.enumToInt())
                         .setValue(column.getValue())
                         .build();
                 list.add(integer);
-            }else if(column.getMysqlType().contains("varchar")){
+            } else if (StringUtils.startsWithIgnoreCase(column.getMysqlType(), "varchar")) {
+
                 Character character = Character.newBuilder()
                         .setCharset("utf8mb4")
                         .setValue(ByteBuffer.wrap(column.getValue().getBytes("ASCII")))
                         .build();
                 list.add(character);
-            }else{
-                Integer integer = Integer.newBuilder()
-                        .setPrecision(10000)
-                        .setValue(column.getValue())
-                        .build();
-                list.add(integer);
-            }
-        }
-        record.setAfterImages(list);
-    }
+            } else if (StringUtils.startsWithIgnoreCase(column.getMysqlType(), "datetime")) {
+                if(!column.getValue().isEmpty()){
+                    String dateStr = column.getValue();
+                    Date date = new SimpleDateFormat("yyyyMMddHHmmssSSS").parse(dateStr);
+                    SimpleDateFormat date0 = new SimpleDateFormat("yyyy");
+                    SimpleDateFormat date1 = new SimpleDateFormat("MM");
+                    SimpleDateFormat date2 = new SimpleDateFormat("dd");
+                    SimpleDateFormat date3 = new SimpleDateFormat("HH");
+                    SimpleDateFormat date4 = new SimpleDateFormat("mm");
+                    SimpleDateFormat date5 = new SimpleDateFormat("ss");
+                    SimpleDateFormat date6 = new SimpleDateFormat("SSS");
 
-    private void setBeforeImages(List<CanalEntry.Column> columns, Record record) throws UnsupportedEncodingException {
-        List<Object> list = new ArrayList<>();
-        for(CanalEntry.Column column:columns){
-            if(column.getMysqlType().contains("int")){
-                Integer integer = Integer.newBuilder()
-                        .setPrecision(MysqlFieldConverter.INT.enumToInt())
-                        .setValue(column.getValue())
-                        .build();
-                list.add(integer);
-            }else if(column.getMysqlType().contains("varchar")){
+                    DateTime dateTime = DateTime.newBuilder()
+                            .setYear(java.lang.Integer.valueOf(date0.format(date)))
+                            .setMonth(java.lang.Integer.valueOf(date1.format(date)))
+                            .setDay(java.lang.Integer.valueOf(date2.format(date)))
+                            .setHour(java.lang.Integer.valueOf(date3.format(date)))
+                            .setMinute(java.lang.Integer.valueOf(date4.format(date)))
+                            .setSecond(java.lang.Integer.valueOf(date5.format(date)))
+                            .setMillis(java.lang.Integer.valueOf(date6.format(date)))
+                            .build();
+
+                    list.add(dateTime);
+                }
+            } else {
                 Character character = Character.newBuilder()
                         .setCharset("utf8mb4")
                         .setValue(ByteBuffer.wrap(column.getValue().getBytes("ASCII")))
                         .build();
                 list.add(character);
-            }else{
-                Integer integer = Integer.newBuilder()
-                        .setPrecision(10000)
-                        .setValue(column.getValue())
-                        .build();
-                list.add(integer);
             }
         }
-        record.setBeforeImages(list);
+        return list;
     }
 
 
-    protected void setTags(List<CanalEntry.Column> columns,Record record) throws Exception {
-        Map<CharSequence,CharSequence> map =new HashMap<>();
+    private void setTags(List<CanalEntry.Column> columns, Record record) throws Exception {
+        Map<CharSequence, CharSequence> map = new HashMap<>();
         for (CanalEntry.Column column : columns) {
             StringBuilder builder = new StringBuilder();
             builder.append("name:" + column.getName() + " + isKey:" + column.getIsKey() + " + updated:" + column.getUpdated() + " + isNull:" + column.getIsNull() + " + value:" + column.getValue());
             logger.info(builder.toString());
             if (column.getIsKey()) {
-                map.put("pk_uk_info","{\"PRIMARY\":[\""+column.getName()+"\"]}");
+                map.put("pk_uk_info", "{\"PRIMARY\":[\"" + column.getName() + "\"]}");
                 record.setTags(map);
-            }else {
-                throw new Exception("表必须设置主键或唯一键!!");
+            }else{
+                record.setTags(map);
             }
         }
     }
 
-    protected void setFields(List<CanalEntry.Column> columns,Record record){
-            List<Object> list = new ArrayList<>();
+    private void setFields(List<CanalEntry.Column> columns, Record record) {
+
+        List<Object> list = new ArrayList<>();
         for (CanalEntry.Column column : columns) {
             Field field = new Field();
             StringBuilder builder = new StringBuilder();
             builder.append("name:" + column.getName() + " + isKey:" + column.getIsKey() + " + updated:" + column.getUpdated() + " + isNull:" + column.getIsNull() + " + value:" + column.getValue());
             field.setName(column.getName());
-            MysqlFieldConverter dataType = MysqlFieldConverter.valueOf(StringUtils.substringBefore(column.getMysqlType(),"(").toUpperCase());
+            String mysqlType = column.getMysqlType().toUpperCase();
+            if(com.mysql.jdbc.StringUtils.indexOfIgnoreCase(mysqlType,"UNSIGNED")!=-1){
+                mysqlType=StringUtils.substringBefore(mysqlType, "UNSIGNED");
+            }
+            MysqlFieldConverter dataType = MysqlFieldConverter.valueOf(StringUtils.substringBefore(mysqlType, "("));
             field.setDataTypeNumber(dataType.enumToInt());
             list.add(field);
         }
         record.setFields(list);
     }
 
-    public static void main(String[] args) {
-        System.out.println("{\"PRIMARY\":[\""+"id"+"\"]}");
+    public static void main(String[] args) throws SQLException {
+        System.out.println("{\"PRIMARY\":[\"" + "id" + "\"]}");
         System.out.println("INSERT".equals("INSERT"));
     }
 
